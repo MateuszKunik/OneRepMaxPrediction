@@ -1,6 +1,7 @@
 import os
 import pandas as pd
 
+from .project_manager import ProjectManager
 from .dataset_manager import VideoDatasetManager
 from .utilities import (
     generate_directory_path,
@@ -13,23 +14,21 @@ from .utilities import (
 )
 
 
-MAIN_PATH = "D:\DevSpace\Projects\DeepLearning\Research\data"
-
-RAW_PATH = os.path.join(MAIN_PATH, "01_raw")
-INTERMEDIATE_PATH = os.path.join(MAIN_PATH, "02_intermediate")
-PRIMARY_PATH = os.path.join(MAIN_PATH, "03_primary")
-
+# to powinno inaczej wygladac \/
+pm = ProjectManager()
+raw_data_path = pm.get_raw_data_path()
+primary_data_path = pm.get_primary_data_path()
 
 def load_video_dataset() -> list:
     dataset = VideoDatasetManager(
-        folder_path=os.path.join(RAW_PATH, "squat_videos"))
+        folder_path=os.path.join(raw_data_path, "squat_videos"))
 
     return dataset.get_video_files()
 
 
 def load_personal_data() -> pd.DataFrame:
     return pd.read_excel(
-        io=os.path.join(RAW_PATH, "PersonalData.xlsx"))
+        io=os.path.join(raw_data_path, "PersonalData.xlsx"))
 
 
 def handle_data_saving(
@@ -63,5 +62,5 @@ def handle_data_saving(
 
 def load_model_input_data(data_version: str) -> pd.DataFrame:
     return pd.read_csv(
-        os.path.join(PRIMARY_PATH, f"{data_version}/model_input_data.csv")
+        os.path.join(primary_data_path, f"{data_version}/model_input_data.csv")
     )

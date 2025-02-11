@@ -1,7 +1,11 @@
-import mlflow
 import sys
-sys.path.append("D:/DevSpace/Projects/DeepLearning/Research")
 
+if sys.platform == "win32":
+    sys.path.append("D:/DevSpace/Projects/DeepLearning/OneRepMaxPrediction")
+elif sys.platform == "linux":
+    sys.path.append("/mnt/d/gniazdko/OneRepMaxPrediction")
+
+import mlflow
 from core.utils import ProjectManager
 from core.utils import setup_configs, load_model_input_data
 from core.pose_estimation import setup_custom_pose_landmarker
@@ -27,7 +31,7 @@ pose_params, data_params, model_params = setup_configs()
 custom_pose = setup_custom_pose_landmarker(pose_params)
 
 model_input_data = load_model_input_data(
-    model_params["model_input_data_version"])
+    model_params["data_version"])
 
 setup_mlflow(model_params["mlflow_parameters"])
 
