@@ -1,0 +1,52 @@
+model_input_data_version: model_input_data_2025-02-04_09-27
+model_name : regression_model
+
+mlflow_parameters:
+  tracking_uri: http://127.0.0.1:5050
+  experiment_name: One-Rep Max Prediction
+
+
+data_parameters:
+  seed: 0
+  filter_ratio: 0.1
+  target_threshold: 0
+  split_proportions: [0.7, 0.2, 0.1]
+
+  # Dataloaders parameters
+  batch_size: 32
+  num_workers: 0
+  pin_memory: True
+  
+  # Augmentation
+  noise_probability: 0.9
+  noise_mean: 0
+  noise_std: 0.01
+
+
+# Training hyperparameters
+model_parameters:
+  # Graph parameters
+  graph_parameters:
+    skeleton_center: 18
+    partition_strategy: spatial
+    max_hop_distance: 3
+    dilation: 1
+
+  device: cuda
+  num_epochs: 5
+  
+  channels: 3
+  edge_importance: True
+  dropout: 0.1
+  penalty_weight: 0.1
+
+  # Hyperparameters for AdamW and CosineAnnealingLR
+  learning_rate: 0.001
+  weight_decay: 0.000001
+  t_max: 50
+  eta_min: 0.00001
+
+  # Parameters for stoppers
+  init_stopper_patience: 10
+  early_stopper_patience: 20
+  early_stopper_min_delta: 1
