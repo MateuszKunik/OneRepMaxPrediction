@@ -46,6 +46,6 @@ class ProjectManager:
 
 
 def find_project_root(current_path: str) -> str:
-    project_name = "Research"
+    project_name = "OneRepMaxPrediction"
 
     return os.path.join(current_path.split(project_name)[0], project_name)
