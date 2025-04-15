@@ -9,42 +9,49 @@ mlflow_parameters:
 data_parameters:
   seed: 0
   filter_ratio: 1
-  target_threshold: 0
+  target_threshold: 0.4
   split_proportions: [0.7, 0.2, 0.1]
 
   # Dataloaders parameters
-  batch_size: 32
-  num_workers: 0
+  batch_size: 128
+  num_workers: 2
   pin_memory: True
   
   # Augmentation
   noise_probability: 0.9
   noise_mean: 0
-  noise_std: 0.01
+  noise_std: 0.015
 
 
 # Training hyperparameters
 model_parameters:
   # Graph parameters
   graph_parameters:
-    skeleton_center: 18
+    skeleton_center: 18 #pelvis
+    #skeleton_center: 17 #THORAX
     partition_strategy: spatial
-    max_hop_distance: 3
+    max_hop_distance: 2 
     dilation: 1
 
   device: cuda
-  num_epochs: 5
-  
+  num_epochs: 60
+
   channels: 3
   edge_importance: True
   dropout: 0.1
   penalty_weight: 0.1
 
-  # Hyperparameters for AdamW and CosineAnnealingLR
-  learning_rate: 0.001
+  # Hyperparameters for AdamW
+  learning_rate: 0.0001
   weight_decay: 0.000001
-  t_max: 50
-  eta_min: 0.00001
+
+  # lr_scheduler: cosine  
+  # t_max: 30
+  # eta_min: 0.00001
+
+  lr_scheduler: step
+  step_size: 20
+  gamma: 0.2
 
   # Parameters for stoppers
   init_stopper_patience: 10

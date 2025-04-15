@@ -1,15 +1,15 @@
 import torch
 from tqdm.auto import tqdm
-from torch.optim import AdamW
-from torch.optim.lr_scheduler import CosineAnnealingLR
 
-from .model_builder import STGCNModel
-from .loss import RMSELoss, ConstrainedLoss
-from .callbacks import InitStopper, EarlyStopper
+from .engine_setup import (
+    initialize_model,
+    initialize_training_components,
+    initialize_callbacks
+)
 
 from .engine_utils import (
     get_device_from_model,
-    transfer_to_device,
+    transfer_data_to_device,
     log_training_start,
     log_epoch_results,
     initialize_results_tracker,
@@ -19,6 +19,10 @@ from .engine_utils import (
     is_stopper_triggered,
     log_early_stopping,
     log_training_complete,
+    is_training_mode,
+    get_context_manager,
+    calculate_average,
+    create_checkpoints
 )
 
 
@@ -27,20 +31,18 @@ def setup_and_train_model(
         train_dataloader: torch.utils.data.DataLoader,
         valid_dataloader: torch.utils.data.DataLoader,
         model_parameters: dict
-) -> torch.nn.Module:
-    
-    graph_parameters = model_parameters["graph_parameters"]
+):
 
-    regression_model = initialize_model(
-        pose_landmarker, graph_parameters, model_parameters)
+    model = initialize_model(
+        pose_landmarker, model_parameters["graph_parameters"], model_parameters)
 
     loss_fn, optimizer, lr_scheduler = initialize_training_components(
-        regression_model, model_parameters)
+        model, model_parameters)
 
-    init_stopper, early_stopper = initialize_callbacks(model_parameters)
+    init_stopper, early_stopper, model_checkpoint = initialize_callbacks(model_parameters)
 
-    results = train_and_validate_model(
-        model=regression_model,
+    training_metrics = train_and_validate_model(
+        model=model,
         train_dataloader=train_dataloader,
         valid_dataloader=valid_dataloader,
         loss_fn=loss_fn,
@@ -50,61 +52,18 @@ def setup_and_train_model(
         early_stopper=early_stopper,
         num_epochs=model_parameters["num_epochs"])
 
-    return regression_model, optimizer, lr_scheduler, results
-    
+    best_training_step = model_checkpoint.get_best_training_step()
 
-def initialize_model(custom_pose, graph_parameters, model_parameters):
-    graph_parameters = {
-        "skeleton_layout": custom_pose, **graph_parameters}
+    checkpoints = create_checkpoints(
+        optimizer, lr_scheduler, training_metrics, best_training_step)
 
-    model = STGCNModel(
-        in_channels=model_parameters["channels"],
-        graph_args=graph_parameters,
-        edge_importance_weighting=model_parameters["edge_importance"],
-        dropout=model_parameters["dropout"])
-
-    return model.to(model_parameters["device"])
-
-
-def initialize_training_components(model, model_parameters):
-    loss_fn = initialize_loss_fn(model_parameters)
-    
-    optimizer = AdamW(
-        model.parameters(),
-        lr=model_parameters["learning_rate"],
-        weight_decay=model_parameters["weight_decay"])
-    
-    lr_scheduler = CosineAnnealingLR(
-        optimizer,
-        T_max=model_parameters["t_max"],
-        eta_min=model_parameters["eta_min"])    
-    
-    return loss_fn, optimizer, lr_scheduler
-
-
-def initialize_loss_fn(model_parameters):
-    loss_fn = ConstrainedLoss(
-        base_loss=RMSELoss(),
-        penalty_weight=model_parameters["penalty_weight"])
-    
-    return loss_fn
-    
-
-def initialize_callbacks(model_parameters):
-    init_stopper = InitStopper(
-        patience=model_parameters["init_stopper_patience"])
-    
-    early_stopper = EarlyStopper(
-        patience=model_parameters["early_stopper_patience"],
-        min_delta=model_parameters["early_stopper_min_delta"])
-    
-    return init_stopper, early_stopper
+    return model, checkpoints
 
 
 def train_and_validate_model(
-        model, train_dataloader, valid_dataloader, loss_fn,
-        optimizer, lr_scheduler, init_stopper=None, early_stopper=None,
-        num_epochs=100,
+        model, train_dataloader, valid_dataloader,
+        loss_fn, optimizer, lr_scheduler, model_checkpoint,
+        init_stopper=None, early_stopper=None, num_epochs=100,
 ):
 
     results_tracker = initialize_results_tracker()
@@ -129,6 +88,8 @@ def train_and_validate_model(
         if is_stopper_triggered(early_stopper, valid_loss):
             log_early_stopping("early_stopper")
             break
+        
+        model_checkpoint.update_training_step(model, epoch, valid_loss)
 
     log_training_complete("regression_model", epoch+1)
 
@@ -136,65 +97,40 @@ def train_and_validate_model(
 
 
 def perform_training_step(model, dataloader, loss_fn, optimizer, lr_scheduler):
-    model.train()
-    device = get_device_from_model(model)
-
-    accumulated_loss = 0.0
-
-    for features, targets in dataloader:
-        features, targets = transfer_to_device(features, targets, device)
-        predictions = model(features)
-
-        loss = loss_fn(targets, predictions)
-        accumulated_loss += loss.item()
-
-        optimizer.zero_grad()
-        loss.backward()
-
-        torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=10.0)
-
-        optimizer.step()
-
-    lr_scheduler.step()
-
-    accumulated_loss = accumulated_loss / len(dataloader)
-
-    return accumulated_loss
+    return perform_step(model, dataloader, loss_fn, optimizer, lr_scheduler)
 
 
 def perform_validation_step(model, dataloader, loss_fn):
-    model.eval()
-    device = get_device_from_model(model)
+    return perform_step(model, dataloader, loss_fn)
 
+
+def perform_step(model, dataloader, loss_fn, optimizer=None, lr_scheduler=None):
+    training_mode = is_training_mode(optimizer)
+    device = get_device_from_model(model)
     accumulated_loss = 0.0
 
-    with torch.inference_mode():
+    model.train() if training_mode else model.eval()
+
+    with get_context_manager(training_mode):
         for features, targets in dataloader:
-            features, targets = transfer_to_device(features, targets, device)
+            features, targets = transfer_data_to_device(features, targets, device)
             predictions = model(features)
 
-            loss = loss_fn(targets, predictions)
+            loss = loss_fn(predictions, targets)
             accumulated_loss += loss.item()
 
-    accumulated_loss = accumulated_loss / len(dataloader)
+            if optimizer:
+                optimizer.zero_grad()
+                loss.backward()
 
-    return accumulated_loss
+                # \/ wrzucić do funkcji
+                torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=10.0)
 
+                optimizer.step()
 
-def evaluate_model_performance(model, dataloader, model_parameters):
-    model.eval()
-    device = get_device_from_model(model)
-    loss_fn = initialize_loss_fn(model_parameters)
-    accumulated_loss = 0.0
+        if training_mode and lr_scheduler:
+            lr_scheduler.step()
 
-    with torch.inference_mode():
-        for features, targets in dataloader:
-            features, targets = transfer_to_device(features, targets, device)
-            predictions = model(features)
+    average_loss = calculate_average(accumulated_loss, dataloader)
 
-            loss = loss_fn(targets, predictions)
-            accumulated_loss += loss.item()
-
-    accumulated_loss = accumulated_loss / len(dataloader)
-
-    return accumulated_loss
+    return average_loss

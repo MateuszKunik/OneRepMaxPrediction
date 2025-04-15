@@ -1,7 +1,7 @@
 import sys
 
 if sys.platform == "win32":
-    sys.path.append("D:/DevSpace/Projects/DeepLearning/OneRepMaxPrediction")
+    sys.path.append("D:/DevSpace/Projects/Research/OneRepMaxPrediction")
 elif sys.platform == "linux":
     sys.path.append("/mnt/d/gniazdko/OneRepMaxPrediction")
 
@@ -16,56 +16,48 @@ from core.machine_learning.graph_based_model import (
     split_data_by_proportions,
     create_dataloaders,
     setup_and_train_model,
-    plot_loss_curves,
-    summarize_training,
-    handle_model_saving,
-    evaluate_model_performance,
-    prepare_directory,
-    log_model_artifacts
+    generate_evaluation_report,
+    handle_training_artifacts_saving,
 )
 
 project_manager = ProjectManager()
+primary_data_path = project_manager.get_primary_data_path()
 model_directory_path = project_manager.get_model_data_path()
-pose_params, data_params, model_params = setup_configs()
 
-custom_pose = setup_custom_pose_landmarker(pose_params)
+pose_parameters, data_parameters, model_parameters = setup_configs()
 
-model_input_data = load_model_input_data(
-    model_params["data_version"])
+pose_landmarker = setup_custom_pose_landmarker(pose_parameters)
+model_input_data = load_model_input_data(model_parameters["data_version"])
 
-setup_mlflow(model_params["mlflow_parameters"])
+setup_mlflow(model_parameters["mlflow_parameters"])
 
 with mlflow.start_run():
     filtered_model_input_data = filter_dataframe(
-        model_input_data, model_params["data_parameters"])
+        model_input_data, model_parameters["data_parameters"])
 
-    file_ids_by_split = split_data_by_proportions(
-        filtered_model_input_data, model_params["data_parameters"])
+    data_splits = split_data_by_proportions(
+        filtered_model_input_data, model_parameters["data_parameters"])
 
-    train_data, valid_data, test_data = create_dataloaders(
+    train_dataloader, valid_dataloader, test_dataloader = create_dataloaders(
         filtered_model_input_data,
-        file_ids_by_split,
-        model_params["data_parameters"]
-    )
+        data_splits,
+        model_parameters["data_parameters"])
 
-    model, optimizer, lr_scheduler, results = setup_and_train_model(
-        custom_pose, train_data, valid_data, model_params["model_parameters"])
-
-    evaluation = evaluate_model_performance(
-        model, test_data, model_params["model_parameters"])
-
-    directory_path = prepare_directory(
-        model_directory_path, model_params["model_name"])
-
-    log_model_artifacts(directory_path)
-    summarize_training(results, evaluation)
-    figure = plot_loss_curves(results)
-
-    handle_model_saving(
-        model=model,
-        optimizer=optimizer,
-        lr_scheduler=lr_scheduler,
-        figure=figure,
-        target_path=directory_path,
-        params=model_params
-    )
+    regression_model, checkpoints = setup_and_train_model(
+        pose_landmarker,
+        train_dataloader,
+        valid_dataloader,
+        model_parameters["model_parameters"])
+    
+    evaluation_report = generate_evaluation_report(
+        regression_model,
+        test_dataloader,
+        checkpoints["best_training_step"],
+        model_parameters["model_parameters"])
+    
+    handle_training_artifacts_saving(
+        regression_model,
+        checkpoints,
+        model_parameters,
+        evaluation_report,
+        model_directory_path)
